@@ -18,35 +18,61 @@ module.exports = async (oldState, newState) => {
         });
     }
 
-    // 🔥 SAFETY FIXES
-    if (!data.vcLB) data.vcLB = { logs: [] };
-    if (!data.vcLB.logs) data.vcLB.logs = [];
-
     if (!data.vcSessions) data.vcSessions = {};
+    if (!data.vcLB) data.vcLB = { logs: [] };
+    if (!Array.isArray(data.vcLB.logs)) data.vcLB.logs = [];
+
+    const oldVC = oldState.channel;
+    const newVC = newState.channel;
+
+    const now = Date.now();
 
     // =========================
     // 🎤 JOIN VC
     // =========================
-    if (!oldState.channel && newState.channel) {
-        data.vcSessions[userId] = Date.now();
+    if (!oldVC && newVC) {
+        data.vcSessions[userId] = now;
+    }
+
+    // =========================
+    // 🔁 SWITCH VC (IMPORTANT FIX)
+    // =========================
+    if (oldVC && newVC && oldVC.id !== newVC.id) {
+        // reset session cleanly (prevents time stacking)
+        data.vcSessions[userId] = now;
     }
 
     // =========================
     // 🎤 LEAVE VC
     // =========================
-    if (oldState.channel && !newState.channel) {
+    if (oldVC && !newVC) {
         const start = data.vcSessions[userId];
 
-        if (!start) return;
+        // safety check
+        if (!start || start > now) {
+            delete data.vcSessions[userId];
+            return;
+        }
+
+        const durationMs = now - start;
+
+        // ignore invalid sessions
+        if (durationMs <= 0) {
+            delete data.vcSessions[userId];
+            return;
+        }
 
         data.vcLB.logs.push({
             userId,
             start,
-            end: Date.now()
+            end: now
         });
 
         delete data.vcSessions[userId];
     }
 
-    await data.save();
+    // =========================
+    // 💾 SAVE
+    // =========================
+    await data.save().catch(() => null);
 };
