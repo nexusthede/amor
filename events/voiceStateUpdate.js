@@ -1,109 +1,91 @@
 const GuildLB = require("../models/GuildLB");
 
-module.exports = (client) => {
+module.exports = async (oldState, newState) => {
+    if (!newState.guild) return;
 
-    if (!client || !client.on) {
-        console.error("voiceStateUpdate: client is not passed correctly");
-        return;
+    const guildId = newState.guild.id;
+    const userId = newState.id;
+
+    let data = await GuildLB.findOne({ guildId });
+
+    if (!data) {
+        data = await GuildLB.create({
+            guildId,
+            chatLB: { logs: [] },
+            vcLB: { logs: [] },
+            vcSessions: {}
+        });
     }
 
-    client.on("voiceStateUpdate", async (oldState, newState) => {
+    if (!data.vcSessions) data.vcSessions = {};
+    if (!data.vcLB) data.vcLB = { logs: [] };
+    if (!Array.isArray(data.vcLB.logs)) data.vcLB.logs = [];
 
-        const guildId = newState.guild?.id || oldState.guild?.id;
-        if (!guildId) return;
+    const oldVC = oldState.channel;
+    const newVC = newState.channel;
 
-        const userId = newState.member?.id || oldState.member?.id;
-        if (!userId) return;
+    const now = Date.now();
 
-        const oldChannel = oldState.channelId;
-        const newChannel = newState.channelId;
+    const MAX_SESSION = 60 * 60 * 1000; // 1 hour cap (prevents fake long time)
 
-        const data = await GuildLB.findOne({ guildId });
-        if (!data) return;
+    // =========================
+    // 🎤 JOIN VC
+    // =========================
+    if (!oldVC && newVC) {
+        data.vcSessions[userId] = now;
+    }
 
-        if (!data.vcLB) data.vcLB = {};
-        if (!Array.isArray(data.vcLB.logs)) data.vcLB.logs = [];
-        if (!Array.isArray(data.vcLB.users)) data.vcLB.users = [];
+    // =========================
+    // 🔁 SWITCH VC
+    // =========================
+    if (oldVC && newVC && oldVC.id !== newVC.id) {
+        data.vcSessions[userId] = now;
+    }
 
-        // helper: get or create user entry
-        const getUser = () => {
-            let user = data.vcLB.users.find(u => u.userId === userId);
-            if (!user) {
-                user = { userId, minutes: 0 };
-                data.vcLB.users.push(user);
-            }
-            return user;
-        };
+    // =========================
+    // 🎤 LEAVE VC
+    // =========================
+    if (oldVC && !newVC) {
+        const start = data.vcSessions[userId];
 
-        // 🟢 JOIN VC
-        if (!oldChannel && newChannel) {
-
-            const active = data.vcLB.logs.find(
-                l => l.userId === userId && !l.end
-            );
-
-            if (active) return;
-
-            data.vcLB.logs.push({
-                userId,
-                start: Date.now()
-            });
-
-            await data.save().catch(() => null);
+        if (!start || start > now) {
+            delete data.vcSessions[userId];
             return;
         }
 
-        // 🔁 SWITCH VC (treat as leave + join)
-        if (oldChannel && newChannel && oldChannel !== newChannel) {
+        let durationMs = now - start;
 
-            const session = data.vcLB.logs.find(
-                l => l.userId === userId && !l.end
-            );
-
-            if (session) {
-                const end = Date.now();
-                let minutes = Math.floor((end - session.start) / 60000);
-                if (minutes > 720) minutes = 720;
-
-                const user = getUser();
-                user.minutes += minutes;
-
-                session.end = end;
-                session.minutes = minutes;
-            }
-
-            // start new session
-            data.vcLB.logs.push({
-                userId,
-                start: Date.now()
-            });
-
-            await data.save().catch(() => null);
+        // ❌ block weird/AFK inflated sessions
+        if (durationMs <= 0) {
+            delete data.vcSessions[userId];
             return;
         }
 
-        // 🔴 LEAVE VC
-        if (oldChannel && !newChannel) {
-
-            const session = data.vcLB.logs.find(
-                l => l.userId === userId && !l.end
-            );
-
-            if (!session) return;
-
-            const end = Date.now();
-            let minutes = Math.floor((end - session.start) / 60000);
-
-            if (minutes <= 0) return;
-            if (minutes > 720) minutes = 720;
-
-            const user = getUser();
-            user.minutes += minutes;
-
-            session.end = end;
-            session.minutes = minutes;
-
-            await data.save().catch(() => null);
+        // ✅ cap session so it can’t give insane time
+        if (durationMs > MAX_SESSION) {
+            durationMs = MAX_SESSION;
         }
-    });
+
+        const minutes = Math.floor(durationMs / 60000);
+
+        if (minutes <= 0) {
+            delete data.vcSessions[userId];
+            return;
+        }
+
+        const existing = data.vcLB.logs.find(l => l.userId === userId);
+
+        if (existing) {
+            existing.minutes = (existing.minutes || 0) + minutes;
+        } else {
+            data.vcLB.logs.push({
+                userId,
+                minutes
+            });
+        }
+
+        delete data.vcSessions[userId];
+    }
+
+    await data.save().catch(() => null);
 };
