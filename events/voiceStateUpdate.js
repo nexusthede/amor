@@ -1,78 +1,69 @@
 const GuildLB = require("../models/GuildLB");
 
-module.exports = async (oldState, newState) => {
-    if (!newState.guild) return;
+module.exports = (client) => {
+    client.on("voiceStateUpdate", async (oldState, newState) => {
+        const guildId = newState.guild?.id || oldState.guild?.id;
+        if (!guildId) return;
 
-    const guildId = newState.guild.id;
-    const userId = newState.id;
+        const userId = newState.member?.id;
+        if (!userId) return;
 
-    let data = await GuildLB.findOne({ guildId });
+        const oldChannel = oldState.channelId;
+        const newChannel = newState.channelId;
 
-    if (!data) {
-        data = await GuildLB.create({
-            guildId,
-            chatLB: { logs: [] },
-            vcLB: { logs: [] },
-            vcSessions: {},
-            vcLive: {}
-        });
-    }
+        const data = await GuildLB.findOne({ guildId });
+        if (!data) return;
 
-    if (!data.vcSessions) data.vcSessions = {};
-    if (!data.vcLB) data.vcLB = { logs: [] };
-    if (!Array.isArray(data.vcLB.logs)) data.vcLB.logs = [];
+        if (!data.vcLB) data.vcLB = {};
+        if (!Array.isArray(data.vcLB.logs)) data.vcLB.logs = [];
 
-    const oldVC = oldState.channel;
-    const newVC = newState.channel;
+        // 🟢 JOIN VC
+        if (!oldChannel && newChannel) {
 
-    const now = Date.now();
+            // 🚨 FIX 1: prevent duplicate active sessions
+            const alreadyActive = data.vcLB.logs.find(
+                l => l.userId === userId && !l.end
+            );
 
-    // =========================
-    // 🎤 JOIN VC
-    // =========================
-    if (!oldVC && newVC) {
-        data.vcSessions[userId] = now;
-    }
+            if (alreadyActive) return;
 
-    // =========================
-    // 🔁 SWITCH VC (IMPORTANT FIX)
-    // =========================
-    if (oldVC && newVC && oldVC.id !== newVC.id) {
-        // reset session cleanly (prevents time stacking)
-        data.vcSessions[userId] = now;
-    }
+            data.vcLB.logs.push({
+                userId,
+                start: Date.now(),
+                end: null
+            });
 
-    // =========================
-    // 🎤 LEAVE VC
-    // =========================
-    if (oldVC && !newVC) {
-        const start = data.vcSessions[userId];
-
-        // safety check
-        if (!start || start > now) {
-            delete data.vcSessions[userId];
+            await data.save().catch(() => null);
             return;
         }
 
-        const durationMs = now - start;
-
-        // ignore invalid sessions
-        if (durationMs <= 0) {
-            delete data.vcSessions[userId];
+        // 🔁 SWITCH VC (no reset, no duplicate session)
+        if (oldChannel && newChannel && oldChannel !== newChannel) {
             return;
         }
 
-        data.vcLB.logs.push({
-            userId,
-            start,
-            end: now
-        });
+        // 🔴 LEAVE VC
+        if (oldChannel && !newChannel) {
 
-        delete data.vcSessions[userId];
-    }
+            // 🚨 FIX 2: only close ONE valid session
+            const session = data.vcLB.logs.find(
+                l => l.userId === userId && !l.end
+            );
 
-    // =========================
-    // 💾 SAVE
-    // =========================
-    await data.save().catch(() => null);
+            if (!session) return;
+
+            const end = Date.now();
+            const duration = end - session.start;
+
+            // 🚨 FIX 3: block broken / inflated sessions
+            if (
+                duration <= 0 ||
+                duration > 12 * 60 * 60 * 1000
+            ) return;
+
+            session.end = end;
+
+            await data.save().catch(() => null);
+        }
+    });
 };
