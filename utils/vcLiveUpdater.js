@@ -20,8 +20,33 @@ module.exports = (client) => {
             const channel = await client.channels.fetch(data.vcLive.channelId).catch(() => null);
             if (!channel) continue;
 
-            const msg = await channel.messages.fetch(data.vcLive.messageId).catch(() => null);
-            if (!msg) continue;
+            let msg = await channel.messages.fetch(data.vcLive.messageId).catch(() => null);
+
+            // -------------------------
+            // FIX: RECOVER MISSING PANEL MESSAGE
+            // -------------------------
+            if (!msg) {
+                msg = await channel.send({
+                    embeds: [{
+                        color: embedColor || 0x2b2d31,
+                        description: `# 🎙️ Voice Live Panel\n\n*Recreating panel...*`,
+                        thumbnail: {
+                            url: channel.guild.iconURL({ dynamic: true }) || null
+                        }
+                    }]
+                }).catch(() => null);
+
+                if (!msg) continue;
+
+                await GuildLB.updateOne(
+                    { _id: data._id },
+                    {
+                        $set: {
+                            "vcLive.messageId": msg.id
+                        }
+                    }
+                );
+            }
 
             const guild = channel.guild;
             if (!guild) continue;
