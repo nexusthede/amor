@@ -55,7 +55,7 @@ module.exports = (client) => {
 
             await msg.edit({
                 embeds: [{
-                    color: 0x2b2d31,
+                    color: require("../config").embedColor,
                     description: text,
                     footer: { text: footerText }
                 }]
