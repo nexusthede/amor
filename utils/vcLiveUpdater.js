@@ -1,11 +1,13 @@
+const GuildLB = require("../models/GuildLB");
+const { updateInterval, embedColor } = require("../config");
+
 module.exports = (client) => {
     setInterval(async () => {
 
-        const GuildLB = require("../models/GuildLB");
         const guilds = await GuildLB.find();
 
         for (const data of guilds) {
-            if (!data.vcLive?.channelId) continue;
+            if (!data.vcLive?.channelId || !data.vcLive?.messageId) continue;
 
             const channel = await client.channels.fetch(data.vcLive.channelId).catch(() => null);
             if (!channel) continue;
@@ -14,17 +16,20 @@ module.exports = (client) => {
             if (!msg) continue;
 
             const guild = channel.guild;
+            if (!guild) continue;
+
             const vcs = guild.channels.cache.filter(c => c.type === 2);
 
             let total = 0;
             const list = [];
 
             vcs.forEach(vc => {
-                total += vc.members.size;
+                const count = vc.members.size;
+                total += count;
 
                 list.push({
                     name: vc.name,
-                    count: vc.members.size
+                    count
                 });
             });
 
@@ -38,12 +43,13 @@ module.exports = (client) => {
 
             await msg.edit({
                 embeds: [{
-                    color: 0x2b2d31,
+                    color: embedColor,
                     description: text,
-                    thumbnail: { url: guild.iconURL() }
+                    thumbnail: { url: guild.iconURL({ dynamic: true }) }
                 }]
             }).catch(() => null);
+
         }
 
-    }, 60000);
+    }, updateInterval);
 };
