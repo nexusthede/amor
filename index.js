@@ -1,91 +1,90 @@
-const GuildLB = require("../models/GuildLB");
+const { Client, GatewayIntentBits, Collection } = require("discord.js");
+const mongoose = require("mongoose");
+const fs = require("fs");
+const express = require("express");
 
-module.exports = async (oldState, newState) => {
-    if (!newState.guild) return;
+const config = require("./config");
 
-    const guildId = newState.guild.id;
-    const userId = newState.id;
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildVoiceStates
+    ]
+});
 
-    let data = await GuildLB.findOne({ guildId });
+client.commands = new Collection();
 
-    if (!data) {
-        data = await GuildLB.create({
-            guildId,
-            chatLB: { logs: [] },
-            vcLB: { logs: [] },
-            vcSessions: {}
-        });
+// =========================
+// EXPRESS UPTIME SERVER
+// =========================
+const app = express();
+
+app.get("/", (req, res) => {
+    res.status(200).send("Bot Online");
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log(`Uptime server running on port ${PORT}`);
+});
+
+// =========================
+// LOAD COMMANDS
+// =========================
+const commandFiles = fs.readdirSync("./commands");
+
+for (const file of commandFiles) {
+    const cmd = require(`./commands/${file}`);
+    if (cmd.name) client.commands.set(cmd.name, cmd);
+}
+
+// =========================
+// PREFIX HANDLER
+// =========================
+client.on("messageCreate", async (message) => {
+    if (!message.guild || message.author.bot) return;
+    if (!message.content.startsWith(config.prefix)) return;
+
+    const args = message.content
+        .slice(config.prefix.length)
+        .trim()
+        .split(/ +/);
+
+    const name = args.shift().toLowerCase();
+
+    const command = client.commands.get(name);
+    if (!command) return;
+
+    try {
+        command.execute(client, message, args, config);
+    } catch (err) {
+        console.error(err);
     }
+});
 
-    if (!data.vcSessions) data.vcSessions = {};
-    if (!data.vcLB) data.vcLB = { logs: [] };
-    if (!Array.isArray(data.vcLB.logs)) data.vcLB.logs = [];
+// =========================
+// MONGO DB
+// =========================
+mongoose.connect(process.env.MONGO)
+    .then(() => console.log("✅ MongoDB Connected"))
+    .catch(err => console.error("❌ MongoDB Error:", err));
 
-    const oldVC = oldState.channel;
-    const newVC = newState.channel;
+// =========================
+// EVENTS
+// =========================
+client.on("messageCreate", require("./events/messageCreate"));
+client.on("voiceStateUpdate", require("./events/voiceStateUpdate"));
+client.once("ready", require("./events/ready"));
 
-    const now = Date.now();
+// =========================
+// WEEKLY RESET
+// =========================
+require("./events/weeklyReset")(client);
 
-    const MAX_SESSION = 60 * 60 * 1000; // 1 hour cap (prevents fake long time)
-
-    // =========================
-    // 🎤 JOIN VC
-    // =========================
-    if (!oldVC && newVC) {
-        data.vcSessions[userId] = now;
-    }
-
-    // =========================
-    // 🔁 SWITCH VC
-    // =========================
-    if (oldVC && newVC && oldVC.id !== newVC.id) {
-        data.vcSessions[userId] = now;
-    }
-
-    // =========================
-    // 🎤 LEAVE VC
-    // =========================
-    if (oldVC && !newVC) {
-        const start = data.vcSessions[userId];
-
-        if (!start || start > now) {
-            delete data.vcSessions[userId];
-            return;
-        }
-
-        let durationMs = now - start;
-
-        // ❌ block weird/AFK inflated sessions
-        if (durationMs <= 0) {
-            delete data.vcSessions[userId];
-            return;
-        }
-
-        // ✅ cap session so it can’t give insane time
-        if (durationMs > MAX_SESSION) {
-            durationMs = MAX_SESSION;
-        }
-
-        const minutes = Math.floor(durationMs / 60000);
-
-        if (minutes <= 0) {
-            delete data.vcSessions[userId];
-            return;
-        }
-
-        const existing = data.vcLB.logs.find(l => l.userId === userId);
-
-        if (existing) {
-            existing.minutes = (existing.minutes || 0) + minutes;
-        } else {
-            data.vcLB.logs.push({
-                userId,
-                minutes
-            });
-        }
-
-        delete data.vcSessions[userId];
-    }
-
-    await data.save().catch(() => null);
-};
+// =========================
+// LOGIN
+// =========================
+client.login(process.env.TOKEN);
