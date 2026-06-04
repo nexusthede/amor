@@ -70,5 +70,9 @@ client.on("messageCreate", require("./events/messageCreate"));
 client.on("voiceStateUpdate", require("./events/voiceStateUpdate"));
 client.once("ready", require("./events/ready"));
 
+// 👇 ADD THIS LINE HERE
+
+require("./events/weeklyReset")();
+
 // Login
 client.login(process.env.TOKEN);
