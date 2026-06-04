@@ -1,6 +1,5 @@
 const GuildLB = require("../models/GuildLB");
-
-const WEEK = 7 * 24 * 60 * 60 * 1000;
+const { weekMs, embedColor, updateInterval } = require("../config");
 
 module.exports = (client) => {
     setInterval(async () => {
@@ -8,7 +7,7 @@ module.exports = (client) => {
         const guilds = await GuildLB.find();
 
         for (const data of guilds) {
-            if (!data.chatLB?.channelId) continue;
+            if (!data.chatLB?.channelId || !data.chatLB?.messageId) continue;
 
             const channel = await client.channels.fetch(data.chatLB.channelId).catch(() => null);
             if (!channel) continue;
@@ -18,9 +17,9 @@ module.exports = (client) => {
 
             const map = {};
 
-            for (const l of data.chatLB.logs) {
-                if (Date.now() - l.time > WEEK) continue;
-                map[l.userId] = (map[l.userId] || 0) + 1;
+            for (const log of data.chatLB.logs || []) {
+                if (Date.now() - log.time > weekMs) continue;
+                map[log.userId] = (map[log.userId] || 0) + 1;
             }
 
             const top = Object.entries(map)
@@ -34,9 +33,12 @@ module.exports = (client) => {
             });
 
             await msg.edit({
-                embeds: [{ color: 0x2b2d31, description: text }]
+                embeds: [{
+                    color: embedColor,
+                    description: text
+                }]
             }).catch(() => null);
         }
 
-    }, 60000);
+    }, updateInterval);
 };
