@@ -2,7 +2,6 @@ const GuildLB = require("../models/GuildLB");
 
 module.exports = (client) => {
 
-    // 🚨 safety check (prevents crash if loader breaks)
     if (!client || !client.on) {
         console.error("voiceStateUpdate: client is not passed correctly");
         return;
@@ -13,7 +12,7 @@ module.exports = (client) => {
         const guildId = newState.guild?.id || oldState.guild?.id;
         if (!guildId) return;
 
-        const userId = newState.member?.id;
+        const userId = newState.member?.id || oldState.member?.id;
         if (!userId) return;
 
         const oldChannel = oldState.channelId;
@@ -37,7 +36,8 @@ module.exports = (client) => {
             data.vcLB.logs.push({
                 userId,
                 start: Date.now(),
-                end: null
+                end: null,
+                minutes: 0
             });
 
             await data.save().catch(() => null);
@@ -57,11 +57,12 @@ module.exports = (client) => {
             if (!session) return;
 
             const end = Date.now();
-            const duration = end - session.start;
+            const minutes = Math.floor((end - session.start) / 60000);
 
-            if (duration <= 0 || duration > 12 * 60 * 60 * 1000) return;
+            if (minutes <= 0 || minutes > 720) return; // max 12 hours
 
             session.end = end;
+            session.minutes = minutes;
 
             await data.save().catch(() => null);
         }
