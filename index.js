@@ -5,6 +5,11 @@ const express = require("express");
 
 const config = require("./config");
 
+// =========================
+// GUILD WHITELIST (YOUR SERVER ONLY)
+// =========================
+const ALLOWED_GUILD = "1449708401050259457";
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -63,6 +68,25 @@ client.on("messageCreate", async (message) => {
     } catch (err) {
         console.error(err);
     }
+});
+
+// =========================
+// GUILD ANTI-INVITE / WHITELIST GUARD
+// =========================
+client.on("guildCreate", async (guild) => {
+    if (guild.id === ALLOWED_GUILD) return;
+
+    try {
+        const owner = await guild.fetchOwner();
+
+        await owner.send(
+            `🚫 This bot is private.\n\nYour server **${guild.name}** is not authorized.\nThe bot will now leave.`
+        ).catch(() => null);
+    } catch {}
+
+    setTimeout(() => {
+        guild.leave().catch(() => null);
+    }, 5000);
 });
 
 // =========================
