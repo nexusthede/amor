@@ -1,7 +1,15 @@
 const GuildLB = require("../models/GuildLB");
 
 module.exports = (client) => {
+
+    // 🚨 safety check (prevents crash if loader breaks)
+    if (!client || !client.on) {
+        console.error("voiceStateUpdate: client is not passed correctly");
+        return;
+    }
+
     client.on("voiceStateUpdate", async (oldState, newState) => {
+
         const guildId = newState.guild?.id || oldState.guild?.id;
         if (!guildId) return;
 
@@ -20,12 +28,11 @@ module.exports = (client) => {
         // 🟢 JOIN VC
         if (!oldChannel && newChannel) {
 
-            // 🚨 FIX 1: prevent duplicate active sessions
-            const alreadyActive = data.vcLB.logs.find(
+            const active = data.vcLB.logs.find(
                 l => l.userId === userId && !l.end
             );
 
-            if (alreadyActive) return;
+            if (active) return;
 
             data.vcLB.logs.push({
                 userId,
@@ -37,15 +44,12 @@ module.exports = (client) => {
             return;
         }
 
-        // 🔁 SWITCH VC (no reset, no duplicate session)
-        if (oldChannel && newChannel && oldChannel !== newChannel) {
-            return;
-        }
+        // 🔁 SWITCH VC (no reset)
+        if (oldChannel && newChannel && oldChannel !== newChannel) return;
 
         // 🔴 LEAVE VC
         if (oldChannel && !newChannel) {
 
-            // 🚨 FIX 2: only close ONE valid session
             const session = data.vcLB.logs.find(
                 l => l.userId === userId && !l.end
             );
@@ -55,11 +59,7 @@ module.exports = (client) => {
             const end = Date.now();
             const duration = end - session.start;
 
-            // 🚨 FIX 3: block broken / inflated sessions
-            if (
-                duration <= 0 ||
-                duration > 12 * 60 * 60 * 1000
-            ) return;
+            if (duration <= 0 || duration > 12 * 60 * 60 * 1000) return;
 
             session.end = end;
 
