@@ -6,8 +6,16 @@ module.exports = (client) => {
 
         const guilds = await GuildLB.find();
 
+        if (!guilds || guilds.length === 0) return;
+
         for (const data of guilds) {
-            if (!data.vcLive?.channelId || !data.vcLive?.messageId) continue;
+
+            // -------------------------
+            // FALLBACK SAFETY (IMPORTANT)
+            // -------------------------
+            if (!data) continue;
+            if (!data.vcLive) continue;
+            if (!data.vcLive.channelId || !data.vcLive.messageId) continue;
 
             const channel = await client.channels.fetch(data.vcLive.channelId).catch(() => null);
             if (!channel) continue;
@@ -23,13 +31,10 @@ module.exports = (client) => {
             let total = 0;
             const list = [];
 
-            // -------------------------
-            // BUILD CLEAN VC LIST
-            // -------------------------
             vcs.forEach(vc => {
                 const count = vc.members.size;
 
-                // 🚨 FIX: remove empty VCs (prevents ghost channels)
+                // remove empty VCs
                 if (count === 0) return;
 
                 total += count;
@@ -43,7 +48,7 @@ module.exports = (client) => {
             list.sort((a, b) => b.count - a.count);
 
             // -------------------------
-            // FORMAT OUTPUT
+            // FALLBACK TEXT
             // -------------------------
             let text;
 
@@ -70,19 +75,19 @@ module.exports = (client) => {
             }
 
             // -------------------------
-            // UPDATE EMBED
+            // SAFE EMBED UPDATE
             // -------------------------
             await msg.edit({
                 embeds: [{
-                    color: embedColor,
+                    color: embedColor || 0x2b2d31,
                     description: text,
                     thumbnail: {
-                        url: guild.iconURL({ dynamic: true })
+                        url: guild.iconURL({ dynamic: true }) || null
                     }
                 }]
             }).catch(() => null);
 
         }
 
-    }, updateInterval);
+    }, updateInterval || 60000);
 };
