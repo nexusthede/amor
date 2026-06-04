@@ -8,7 +8,8 @@ module.exports = (client) => {
         const guilds = await GuildLB.find();
 
         for (const data of guilds) {
-            if (!data.vcLB?.channelId) continue;
+            if (!data.vcLB?.channelId || !data.vcLB?.messageId) continue;
+            if (!Array.isArray(data.vcLB.logs)) continue;
 
             const channel = await client.channels.fetch(data.vcLB.channelId).catch(() => null);
             if (!channel) continue;
@@ -19,9 +20,12 @@ module.exports = (client) => {
             const map = {};
 
             for (const s of data.vcLB.logs) {
+                if (!s?.start || !s?.end || !s?.userId) continue;
                 if (Date.now() - s.end > WEEK) continue;
 
                 const time = (s.end - s.start) / 1000;
+                if (time <= 0) continue;
+
                 map[s.userId] = (map[s.userId] || 0) + time;
             }
 
@@ -29,17 +33,32 @@ module.exports = (client) => {
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 10);
 
-            let text = `🏆 Top VC Champions - 7 Day Window\n\n`;
+            let text = `# 🏆 Top VC Champions - 7 Day Window\n\n`;
 
             top.forEach((u, i) => {
-                const h = Math.floor(u[1] / 3600);
-                const m = Math.floor((u[1] % 3600) / 60);
+                const totalSeconds = Math.floor(u[1]);
 
-                text += `${i === 0 ? "👑" : `\`${i + 1}.\``} <@${u[0]}> - ${h}h ${m}m\n`;
+                const h = Math.floor(totalSeconds / 3600);
+                const m = Math.floor((totalSeconds % 3600) / 60);
+                const s = totalSeconds % 60;
+
+                text += `${i === 0 ? "👑" : `\`${i + 1}.\``} <@${u[0]}> - **${h}h ${m}m ${s}s**\n`;
             });
 
+            const now = Date.now();
+            const start = new Date(now - WEEK);
+            const end = new Date(now);
+
+            const footerText =
+                `${start.toISOString().slice(0,16).replace("T"," ")} → ` +
+                `${end.toISOString().slice(0,16).replace("T"," ")} • 7d window • Updates every 60s (UTC)`;
+
             await msg.edit({
-                embeds: [{ color: 0x2b2d31, description: text }]
+                embeds: [{
+                    color: 0x2b2d31,
+                    description: text,
+                    footer: { text: footerText }
+                }]
             }).catch(() => null);
         }
 
