@@ -28,7 +28,7 @@ app.listen(process.env.PORT || 3000, () => {
 });
 
 // =========================
-// COMMANDS
+// COMMAND LOADER
 // =========================
 for (const file of fs.readdirSync("./commands")) {
     const cmd = require(`./commands/${file}`);
@@ -36,7 +36,7 @@ for (const file of fs.readdirSync("./commands")) {
 }
 
 // =========================
-// PREFIX COMMAND HANDLER
+// PREFIX COMMAND HANDLER (ONLY ONE - FIXED)
 // =========================
 client.on("messageCreate", async (message) => {
     if (!message.guild || message.author.bot) return;
@@ -56,7 +56,7 @@ client.on("messageCreate", async (message) => {
 });
 
 // =========================
-// GUILD WHITELIST AUTO-LEAVE (SAFE)
+// GUILD WHITELIST AUTO-LEAVE
 // =========================
 const allowedGuilds = require("./config/allowedGuilds");
 
@@ -69,7 +69,6 @@ client.on("guildCreate", async (guild) => {
             return;
         }
 
-        // find safe channel
         let channel = guild.systemChannel;
 
         if (!channel) {
@@ -99,9 +98,8 @@ client.on("guildCreate", async (guild) => {
 });
 
 // =========================
-// EVENTS
+// EVENTS (SAFE - NO DUPLICATE MESSAGE HANDLER)
 // =========================
-client.on("messageCreate", require("./events/messageCreate"));
 client.on("voiceStateUpdate", require("./events/voiceStateUpdate"));
 client.once("ready", require("./events/ready"));
 
