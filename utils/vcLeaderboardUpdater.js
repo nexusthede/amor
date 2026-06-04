@@ -19,11 +19,21 @@ module.exports = (client) => {
 
             const map = {};
 
-            // FIXED: now uses minutes instead of start/end
             for (const s of data.vcLB.logs) {
-                if (!s?.userId || !s?.minutes) continue;
+                if (!s?.start || !s?.end || !s?.userId) continue;
 
-                map[s.userId] = (map[s.userId] || 0) + (s.minutes * 60);
+                // 🔥 FIX 1: ignore invalid / duplicate sessions
+                const timeDiff = s.end - s.start;
+
+                if (
+                    timeDiff <= 0 ||
+                    timeDiff > 12 * 60 * 60 * 1000 || // prevents inflated sessions
+                    Date.now() - s.end > WEEK
+                ) continue;
+
+                const time = timeDiff / 1000;
+
+                map[s.userId] = (map[s.userId] || 0) + time;
             }
 
             const top = Object.entries(map)
