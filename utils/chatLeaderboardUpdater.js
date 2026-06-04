@@ -54,10 +54,11 @@ module.exports = async (client) => {
                 `${end.toISOString().slice(0,16).replace("T"," ")} • 7d window • Updates every 60s (UTC)`;
 
             // -------------------------
-            // UPDATE EMBED
+            // UPDATE EMBED (ONLY COLOR FIXED)
             // -------------------------
             await msg.edit({
                 embeds: [{
+                    color: require("../config").embedColor,
                     description: text,
                     footer: { text: footerText }
                 }]
