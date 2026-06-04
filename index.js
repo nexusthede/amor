@@ -21,56 +21,82 @@ client.commands = new Collection();
 // =========================
 const app = express();
 
-app.get("/", (req, res) => {
-    res.status(200).send("Bot Online");
-});
+app.get("/", (req, res) => res.send("Bot Online"));
 
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-    console.log(`Uptime server running on port ${PORT}`);
+app.listen(process.env.PORT || 3000, () => {
+    console.log("Uptime server running");
 });
 
 // =========================
-// LOAD COMMANDS
+// COMMANDS
 // =========================
-const commandFiles = fs.readdirSync("./commands");
-
-for (const file of commandFiles) {
+for (const file of fs.readdirSync("./commands")) {
     const cmd = require(`./commands/${file}`);
-    if (cmd.name) client.commands.set(cmd.name, cmd);
+    if (cmd?.name) client.commands.set(cmd.name, cmd);
 }
 
 // =========================
-// PREFIX HANDLER
+// PREFIX COMMAND HANDLER
 // =========================
 client.on("messageCreate", async (message) => {
     if (!message.guild || message.author.bot) return;
     if (!message.content.startsWith(config.prefix)) return;
 
-    const args = message.content
-        .slice(config.prefix.length)
-        .trim()
-        .split(/ +/);
-
+    const args = message.content.slice(config.prefix.length).trim().split(/ +/);
     const name = args.shift().toLowerCase();
 
     const command = client.commands.get(name);
     if (!command) return;
 
     try {
-        command.execute(client, message, args, config);
+        await command.execute(client, message, args, config);
     } catch (err) {
-        console.error(err);
+        console.error("Command error:", err);
     }
 });
 
 // =========================
-// MONGO DB
+// GUILD WHITELIST AUTO-LEAVE (SAFE)
 // =========================
-mongoose.connect(process.env.MONGO)
-    .then(() => console.log("✅ MongoDB Connected"))
-    .catch(err => console.error("❌ MongoDB Error:", err));
+const allowedGuilds = require("./config/allowedGuilds");
+
+client.on("guildCreate", async (guild) => {
+    try {
+        console.log(`Joined guild: ${guild.name} (${guild.id})`);
+
+        if (allowedGuilds.includes(guild.id)) {
+            console.log("Allowed guild - staying");
+            return;
+        }
+
+        // find safe channel
+        let channel = guild.systemChannel;
+
+        if (!channel) {
+            channel = guild.channels.cache.find(c =>
+                c?.isTextBased?.() &&
+                c.permissionsFor(guild.members.me)?.has("SendMessages")
+            );
+        }
+
+        if (channel) {
+            await channel.send(
+                "⚠️ This bot is restricted.\nYou need permission from Nexus.\nInvite: https://discord.gg/8DqrNJ3wJM"
+            ).catch(() => {});
+        }
+
+        setTimeout(() => {
+            guild.leave().catch(() => {});
+        }, 1500);
+
+    } catch (err) {
+        console.error("guildCreate error:", err);
+
+        try {
+            await guild.leave();
+        } catch {}
+    }
+});
 
 // =========================
 // EVENTS
@@ -78,6 +104,13 @@ mongoose.connect(process.env.MONGO)
 client.on("messageCreate", require("./events/messageCreate"));
 client.on("voiceStateUpdate", require("./events/voiceStateUpdate"));
 client.once("ready", require("./events/ready"));
+
+// =========================
+// MONGO
+// =========================
+mongoose.connect(process.env.MONGO)
+    .then(() => console.log("MongoDB Connected"))
+    .catch(err => console.error("MongoDB Error:", err));
 
 // =========================
 // WEEKLY RESET
