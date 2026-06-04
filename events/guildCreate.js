@@ -1,32 +1,46 @@
-module.exports = async (guild) => {
-    try {
-        const channel =
-            guild.systemChannel ||
-            guild.channels.cache.find(
-                c => c.isTextBased?.() &&
-                c.permissionsFor(guild.members.me)?.has("SendMessages")
-            );
+const allowedGuilds = require("./config/allowedGuilds");
 
-        if (channel) {
-            await channel.send(
-                `⚠️ This bot is restricted.\nYou need permission from Nexus to use this bot.\nInvite: https://discord.gg/8DqrNJ3wJM`
-            );
+client.on("guildCreate", async (guild) => {
+    try {
+        console.log(`Joined guild: ${guild.name} (${guild.id})`);
+
+        // whitelist check
+        if (allowedGuilds.includes(guild.id)) {
+            console.log("Allowed guild - staying");
+            return;
         }
 
-        // wait briefly so message actually sends
-        await new Promise(res => setTimeout(res, 2000));
+        // SAFE channel selection (no crashes)
+        let channel = null;
 
-        // THEN leave the server
-        await guild.leave();
+        try {
+            channel = guild.systemChannel;
 
-        console.log(`Left guild: ${guild.name} (${guild.id})`);
+            if (!channel) {
+                channel = guild.channels.cache.find(c =>
+                    c &&
+                    c.isTextBased?.() &&
+                    c.permissionsFor(guild.members.me)?.has("SendMessages")
+                );
+            }
+        } catch (e) {
+            console.log("Channel fetch failed, skipping message");
+        }
+
+        // send message safely
+        if (channel) {
+            await channel.send(
+                "⚠️ This bot is restricted.\nInvite: https://discord.gg/8DqrNJ3wJM"
+            ).catch(() => {});
+        }
+
+        // leave safely
+        setTimeout(() => {
+            guild.leave().catch(() => {});
+        }, 1500);
 
     } catch (err) {
-        console.log("GuildCreate error:", err);
-
-        // even if anything fails, force leave
-        try {
-            await guild.leave();
-        } catch {}
+        console.error("guildCreate crashed:", err);
+        // IMPORTANT: never crash bot from this event
     }
-};
+});
