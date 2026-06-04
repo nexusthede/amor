@@ -19,14 +19,11 @@ module.exports = (client) => {
 
             const map = {};
 
+            // FIXED: now uses minutes instead of start/end
             for (const s of data.vcLB.logs) {
-                if (!s?.start || !s?.end || !s?.userId) continue;
-                if (Date.now() - s.end > WEEK) continue;
+                if (!s?.userId || !s?.minutes) continue;
 
-                const time = (s.end - s.start) / 1000;
-                if (time <= 0) continue;
-
-                map[s.userId] = (map[s.userId] || 0) + time;
+                map[s.userId] = (map[s.userId] || 0) + (s.minutes * 60);
             }
 
             const top = Object.entries(map)
