@@ -33,7 +33,7 @@ module.exports = (client) => {
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 10);
 
-            let text = `# 🏆 Top VC Champions - 7 Day Window\n\n`;
+            let text = `🏆 Top VC Champions - 7 Day Window\n\n`;
 
             top.forEach((u, i) => {
                 const totalSeconds = Math.floor(u[1]);
