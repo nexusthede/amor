@@ -1,65 +1,97 @@
 const GuildLB = require("../models/GuildLB");
 
-const activeLocks = new Set(); // prevents double triggers
-
 module.exports = async (oldState, newState) => {
+    if (!newState.guild) return;
 
-    const guildId = newState.guild?.id || oldState.guild?.id;
-    if (!guildId) return;
-
+    const guildId = newState.guild.id;
     const userId = newState.id;
-    const key = `${guildId}:${userId}`;
-
-    if (activeLocks.has(key)) return;
-    activeLocks.add(key);
-
-    setTimeout(() => activeLocks.delete(key), 2000);
-
-    const now = Date.now();
-    const MAX = 60 * 60 * 1000;
 
     let data = await GuildLB.findOne({ guildId });
-    if (!data) return;
+
+    if (!data) {
+        data = await GuildLB.create({
+            guildId,
+            chatLB: { logs: [] },
+            vcLB: { logs: [] },
+            vcSessions: {},
+            vcLive: {}
+        });
+    }
 
     if (!data.vcSessions) data.vcSessions = {};
     if (!data.vcLB) data.vcLB = { logs: [] };
+    if (!Array.isArray(data.vcLB.logs)) data.vcLB.logs = [];
 
-    const start = data.vcSessions[userId];
+    const oldVC = oldState.channel;
+    const newVC = newState.channel;
 
-    const addTime = (ms) => {
-        if (!ms || ms <= 0) return;
+    const now = Date.now();
 
-        if (ms > MAX) ms = MAX;
+    // =========================
+    // 🎤 JOIN VC
+    // =========================
+    if (!oldVC && newVC) {
 
-        const mins = Math.floor(ms / 60000);
-        if (mins <= 0) return;
-
-        let user = data.vcLB.logs.find(x => x.userId === userId);
-
-        if (user) user.minutes += mins;
-        else data.vcLB.logs.push({ userId, minutes: mins });
-    };
-
-    // JOIN
-    if (!oldState.channel && newState.channel) {
-        data.vcSessions[userId] = now;
+        // 🔥 FIX 1: prevent duplicate session overwrite
+        if (!data.vcSessions[userId]) {
+            data.vcSessions[userId] = now;
+        }
     }
 
-    // SWITCH (IMPORTANT: only count ONCE)
-    else if (oldState.channel && newState.channel && oldState.channel.id !== newState.channel.id) {
+    // =========================
+    // 🔁 SWITCH VC (IMPORTANT FIX)
+    // =========================
+    if (oldVC && newVC && oldVC.id !== newVC.id) {
 
-        if (start) addTime(now - start);
+        // 🔥 FIX 2: DO NOT reset time (this was causing inflation)
+        // Instead, keep original start time (prevents stacking bug)
 
-        data.vcSessions[userId] = now;
+        if (!data.vcSessions[userId]) {
+            data.vcSessions[userId] = now;
+        }
     }
 
-    // LEAVE
-    else if (oldState.channel && !newState.channel) {
+    // =========================
+    // 🎤 LEAVE VC
+    // =========================
+    if (oldVC && !newVC) {
+        const start = data.vcSessions[userId];
 
-        if (start) addTime(now - start);
+        // safety check
+        if (!start || start > now) {
+            delete data.vcSessions[userId];
+            return;
+        }
+
+        const durationMs = now - start;
+
+        // 🔥 FIX 3: hard cap prevents inflated/bug sessions
+        if (
+            durationMs <= 0 ||
+            durationMs > 12 * 60 * 60 * 1000
+        ) {
+            delete data.vcSessions[userId];
+            return;
+        }
+
+        // 🔥 FIX 4: prevent duplicate log writes
+        const exists = data.vcLB.logs.find(
+            l => l.userId === userId && l.start === start && !l.end
+        );
+
+        if (!exists) {
+            data.vcLB.logs.push({
+                userId,
+                start,
+                end: now
+            });
+        }
 
         delete data.vcSessions[userId];
     }
 
+    // =========================
+    // 💾 SAVE
+    // =========================
     await data.save().catch(() => null);
 };
