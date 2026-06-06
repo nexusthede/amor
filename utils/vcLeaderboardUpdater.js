@@ -19,21 +19,36 @@ module.exports = (client) => {
 
             const map = {};
 
+            // Finished sessions
             for (const s of data.vcLB.logs) {
                 if (!s?.start || !s?.end || !s?.userId) continue;
 
-                // 🔥 FIX 1: ignore invalid / duplicate sessions
                 const timeDiff = s.end - s.start;
 
                 if (
                     timeDiff <= 0 ||
-                    timeDiff > 12 * 60 * 60 * 1000 || // prevents inflated sessions
+                    timeDiff > 12 * 60 * 60 * 1000 ||
                     Date.now() - s.end > WEEK
                 ) continue;
 
                 const time = timeDiff / 1000;
 
                 map[s.userId] = (map[s.userId] || 0) + time;
+            }
+
+            // Live sessions
+            for (const [userId, start] of Object.entries(data.vcSessions || {})) {
+
+                if (!start) continue;
+
+                const liveMs = Date.now() - start;
+
+                if (
+                    liveMs <= 0 ||
+                    liveMs > 12 * 60 * 60 * 1000
+                ) continue;
+
+                map[userId] = (map[userId] || 0) + (liveMs / 1000);
             }
 
             const top = Object.entries(map)
