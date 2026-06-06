@@ -1,9 +1,18 @@
-const { Client, GatewayIntentBits, Collection } = require("discord.js");
+const {
+    Client,
+    GatewayIntentBits,
+    Collection,
+    DefaultWebSocketManagerOptions
+} = require("discord.js");
+
 const mongoose = require("mongoose");
 const fs = require("fs");
 const express = require("express");
 
 const config = require("./config");
+
+// Mobile Status
+DefaultWebSocketManagerOptions.identifyProperties.browser = "Discord Android";
 
 // =========================
 // GUILD WHITELIST (YOUR SERVER ONLY)
