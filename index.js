@@ -118,6 +118,11 @@ client.once("ready", require("./events/ready"));
 require("./events/weeklyReset")(client);
 
 // =========================
+// 🔥 FIX: VC LEADERBOARD UPDATER (ONLY CHANGE)
+// =========================
+require("./utils/vcLeaderboardUpdater")(client);
+
+// =========================
 // LOGIN
 // =========================
 client.login(process.env.TOKEN);
